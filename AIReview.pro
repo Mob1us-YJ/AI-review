@@ -4,7 +4,7 @@
 #
 #-------------------------------------------------
 
-QT       += core gui
+QT       += core gui network
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
@@ -24,14 +24,25 @@ DEFINES += QT_DEPRECATED_WARNINGS
 
 CONFIG += c++11
 
+# 添加系统库支持
+LIBS += -lcups -lsane
+
 SOURCES += \
         form.cpp \
         main.cpp \
-        mainwindow.cpp
+        mainwindow.cpp \
+        networkmanager.cpp \
+        scanmanager.cpp \
+        printmanager.cpp \
+        exammanager.cpp
 
 HEADERS += \
         form.h \
-        mainwindow.h
+        mainwindow.h \
+        networkmanager.h \
+        scanmanager.h \
+        printmanager.h \
+        exammanager.h
 
 FORMS += \
         form.ui \

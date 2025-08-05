@@ -1,9 +1,14 @@
 #include "form.h"
 #include "ui_form.h"
+#include <QDebug>
 
 Form::Form(QString pnum, QString pclass, QString pdiscipline, QString ppaper, QString pstate, QString pquantity, QString ptime, QString pbutton, QWidget *parent) :
     QWidget(parent),
-    ui(new Ui::Form)
+    ui(new Ui::Form),
+    m_taskId(pnum),
+    m_className(pclass),
+    m_subject(pdiscipline),
+    m_buttonType(pbutton)
 {
     ui->setupUi(this);
     this->setFixedHeight(55);                         //设置界面
@@ -23,9 +28,23 @@ Form::Form(QString pnum, QString pclass, QString pdiscipline, QString ppaper, QS
     ui->label_quantity->setText(pquantity);
     ui->label_time->setText(ptime);
     ui->pushButton->setText(pbutton);
+    
+    // 连接按钮点击信号
+    connect(ui->pushButton, &QPushButton::clicked, this, &Form::onPushButtonClicked);
 }
 
 Form::~Form()
 {
     delete ui;
+}
+
+void Form::onPushButtonClicked()
+{
+    qDebug() << "Form按钮被点击:" << m_buttonType << "任务ID:" << m_taskId;
+    
+    if (m_buttonType == "扫描") {
+        emit scanButtonClicked(m_taskId, m_className, m_subject);
+    } else if (m_buttonType == "打印") {
+        emit printButtonClicked(m_taskId, m_className, m_subject);
+    }
 }
