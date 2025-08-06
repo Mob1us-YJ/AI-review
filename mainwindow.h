@@ -9,6 +9,7 @@
 #include "scanmanager.h"
 #include "printmanager.h"
 #include "exammanager.h"
+#include "devicemanager.h"
 
 namespace Ui {
 class MainWindow;
@@ -43,6 +44,12 @@ private slots:
     void onTestPrintClicked();
     void onTestNetworkClicked();
     
+    // 新增：设备管理功能
+    void onDeviceDiscovered(const QString &deviceName, const QString &deviceType);
+    void onDeviceSelected(const QString &deviceName);
+    void onDeviceStatusChanged(const QString &deviceName, const QString &status);
+    void onDeviceError(const QString &deviceName, const QString &error);
+    
     // Form按钮点击处理
     void onFormScanButtonClicked(const QString &taskId, const QString &className, const QString &subject);
     void onFormPrintButtonClicked(const QString &taskId, const QString &className, const QString &subject);
@@ -55,6 +62,7 @@ private:
     ScanManager *m_scanManager;
     PrintManager *m_printManager;
     ExamManager *m_examManager;
+    DeviceManager *m_deviceManager;  // 设备管理器
     
     // 定时器
     QTimer *m_refreshTimer;
@@ -62,6 +70,17 @@ private:
     // 辅助方法
     void setupConnections();
     void addSampleTasks();
+    
+    // 设备管理辅助方法
+    void initializeDeviceManager();
+    void displayDeviceInfo();
+    void testMultifunctionDevice();
+    
+    // 新增：简化后的功能调用方法
+    void onDeviceScanRequested(const QString &deviceName, const QString &taskId, 
+                              const QString &className, const QString &subject);
+    void onDevicePrintRequested(const QString &deviceName, const QString &taskId, 
+                               const QString &className, const QString &subject);
 };
 
 #endif // MAINWINDOW_H

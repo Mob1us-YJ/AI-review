@@ -25,7 +25,7 @@ DEFINES += QT_DEPRECATED_WARNINGS
 CONFIG += c++11
 
 # 添加系统库支持
-LIBS += -lcups -lsane
+LIBS += -lcups
 
 SOURCES += \
         form.cpp \
@@ -34,7 +34,8 @@ SOURCES += \
         networkmanager.cpp \
         scanmanager.cpp \
         printmanager.cpp \
-        exammanager.cpp
+        exammanager.cpp \
+        devicemanager.cpp
 
 HEADERS += \
         form.h \
@@ -42,7 +43,8 @@ HEADERS += \
         networkmanager.h \
         scanmanager.h \
         printmanager.h \
-        exammanager.h
+        exammanager.h \
+        devicemanager.h
 
 FORMS += \
         form.ui \

@@ -46,14 +46,10 @@ void ExamManager::initialize(NetworkManager *networkManager,
             this, &ExamManager::onNetworkError);
     
     // 连接扫描管理器信号
-    connect(m_scanManager, &ScanManager::batchScanCompleted,
-            this, &ExamManager::onBatchScanCompleted);
     connect(m_scanManager, &ScanManager::scanError,
             this, &ExamManager::onScanError);
     
     // 连接打印管理器信号
-    connect(m_printManager, &PrintManager::printCompleted,
-            this, &ExamManager::onPrintCompleted);
     connect(m_printManager, &PrintManager::printError,
             this, &ExamManager::onPrintError);
     
@@ -119,7 +115,7 @@ void ExamManager::startScanTask(const QString &examType, const QString &classNam
     m_currentScanTask = QString("%1_%2_%3").arg(examType).arg(className).arg(subject);
     
     // 开始批量扫描
-    if (m_scanManager->startBatchScan(examType, className, subject, pageCount)) {
+    if (m_scanManager->startScan("default-scanner", "output.pdf")) {
         updateTaskStatus(m_currentScanTask, "扫描中");
         qDebug() << "Started batch scan for" << m_currentScanTask;
     } else {
@@ -136,7 +132,7 @@ void ExamManager::startPrintTask(const QString &taskId, const QString &filePath)
     }
     
     // 开始打印
-    if (m_printManager->printFile(filePath, "Task_" + taskId)) {
+    if (m_printManager->printFile("default-printer", filePath, "Task_" + taskId)) {
         updateTaskStatus(taskId, "打印中");
         qDebug() << "Started print task" << taskId;
     } else {
@@ -191,25 +187,7 @@ void ExamManager::onUploadCompleted(const QString &taskId, bool success)
     }
 }
 
-void ExamManager::onBatchScanCompleted(const QStringList &filePaths)
-{
-    if (!m_networkManager || m_currentScanTask.isEmpty()) {
-        return;
-    }
-    
-    // 解析当前扫描任务信息
-    QStringList parts = m_currentScanTask.split('_');
-    if (parts.size() >= 3) {
-        QString examType = parts[0];
-        QString className = parts[1];
-        QString subject = parts[2];
-        
-        // 上传扫描文件
-        m_networkManager->uploadScanData(examType, className, subject, filePaths);
-        updateTaskStatus(m_currentScanTask, "上传中");
-        qDebug() << "Batch scan completed, uploading" << filePaths.size() << "files";
-    }
-}
+
 
 void ExamManager::onDownloadCompleted(const QString &taskId, const QString &filePath, bool success)
 {
@@ -222,10 +200,10 @@ void ExamManager::onDownloadCompleted(const QString &taskId, const QString &file
     }
 }
 
-void ExamManager::onPrintCompleted(const QString &jobName, int jobId)
+void ExamManager::onPrintCompleted(const QString &deviceName, const QString &jobName, int jobId)
 {
     updateTaskStatus(jobName, "打印完成");
-    qDebug() << "Print completed:" << jobName << "Job ID:" << jobId;
+    qDebug() << "Print completed:" << deviceName << jobName << "Job ID:" << jobId;
 }
 
 void ExamManager::onNetworkError(const QString &error)
@@ -272,5 +250,23 @@ void ExamManager::checkPrintTaskStatus()
                 m_networkManager->downloadPrintFile(taskId, task["fileUrl"].toString());
             }
         }
+    }
+}
+
+void ExamManager::onBatchScanCompleted(const QStringList &filePaths)
+{
+    qDebug() << "批量扫描完成，文件数量:" << filePaths.size();
+    
+    // 更新当前扫描任务状态
+    if (!m_currentScanTask.isEmpty()) {
+        updateTaskStatus(m_currentScanTask, "扫描完成");
+        
+        // 上传扫描文件
+        if (m_networkManager) {
+            m_networkManager->uploadScanData("考试类型", "班级", "学科", filePaths);
+        }
+        
+        qDebug() << "批量扫描任务完成:" << m_currentScanTask 
+                 << "文件数量:" << filePaths.size();
     }
 } 

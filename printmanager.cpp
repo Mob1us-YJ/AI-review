@@ -8,237 +8,164 @@
 
 PrintManager::PrintManager(QObject *parent)
     : QObject(parent),
-      m_printProcess(nullptr),
-      m_copies(1),
-      m_media("A4"),
-      m_sides("two-sided-long-edge"),
       m_simulationMode(false)
 {
-    // 获取默认打印机
-    m_currentPrinter = getDefaultPrinter();
-    
-    // 连接信号
-    connect(m_printProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-            this, &PrintManager::onPrintProcessFinished);
-    connect(m_printProcess, &QProcess::errorOccurred,
-            this, &PrintManager::onPrintProcessError);
 }
 
 PrintManager::~PrintManager()
 {
 }
 
-QStringList PrintManager::getAvailablePrinters()
+
+
+void PrintManager::setPrintSettings(const QString &deviceName, int copies, const QString &media, const QString &sides)
 {
-    QStringList printers;
+    m_printCopies[deviceName] = copies;
+    m_printMedia[deviceName] = media;
+    m_printSides[deviceName] = sides;
     
-    // 使用lpstat -p 列出可用打印机
-    QProcess process;
-    process.start("lpstat", QStringList() << "-p");
-    process.waitForFinished();
-    
-    QString output = process.readAllStandardOutput();
-    QStringList lines = output.split('\n', QString::SkipEmptyParts);
-    
-    for (const QString &line : lines) {
-        if (line.startsWith("printer")) {
-            // 解析打印机名称，格式通常是 "printer printer_name is ..."
-            QStringList parts = line.split(' ');
-            if (parts.size() >= 2) {
-                QString printerName = parts[1];
-                printers.append(printerName);
-            }
-        }
-    }
-    
-    return printers;
+    qDebug() << "设置打印参数，设备:" << deviceName 
+             << "份数:" << copies 
+             << "纸张:" << media 
+             << "双面:" << sides;
 }
 
-QString PrintManager::getDefaultPrinter()
-{
-    // 使用lpstat -d 获取默认打印机
-    QProcess process;
-    process.start("lpstat", QStringList() << "-d");
-    process.waitForFinished();
-    
-    QString output = process.readAllStandardOutput();
-    QRegularExpression regex("system default destination: (.+)");
-    QRegularExpressionMatch match = regex.match(output);
-    
-    if (match.hasMatch()) {
-        return match.captured(1);
-    }
-    
-    return "";
-}
-
-bool PrintManager::selectPrinter(const QString &printerName)
-{
-    QStringList printers = getAvailablePrinters();
-    if (printers.contains(printerName)) {
-        m_currentPrinter = printerName;
-        return true;
-    }
-    return false;
-}
-
-void PrintManager::setPrintSettings(int copies, const QString &media, const QString &sides)
-{
-    m_copies = copies;
-    m_media = media;
-    m_sides = sides;
-}
-
-QStringList PrintManager::buildPrintOptions()
+QStringList PrintManager::buildPrintOptions(const QString &deviceName)
 {
     QStringList options;
     
     // 打印机选择
-    if (!m_currentPrinter.isEmpty()) {
-        options << "-d" << m_currentPrinter;
-    }
+    options << "-d" << deviceName;
+    
+    // 获取该设备的打印设置
+    int copies = m_printCopies.value(deviceName, 1);
+    QString media = m_printMedia.value(deviceName, "A4");
+    QString sides = m_printSides.value(deviceName, "two-sided-long-edge");
     
     // 打印份数
-    if (m_copies > 1) {
-        options << "-n" << QString::number(m_copies);
+    if (copies > 1) {
+        options << "-n" << QString::number(copies);
     }
     
-    // 纸张大小
-    options << "-o" << "media=" + m_media;
+    // 纸张大小设置
+    options << "-o" << "media=" + media;
     
-    // 双面打印
-    options << "-o" << "sides=" + m_sides;
+    // 双面打印设置
+    if (sides == "two-sided-long-edge") {
+        options << "-o" << "sides=two-sided-long-edge";
+    } else if (sides == "two-sided-short-edge") {
+        options << "-o" << "sides=two-sided-short-edge";
+    } else {
+        options << "-o" << "sides=one-sided";
+    }
+    
+    // 特殊纸张设置
+    if (media == "A3") {
+        // A3纸张的特殊设置
+        options << "-o" << "fit-to-page";
+        options << "-o" << "scaling=100";
+    }
     
     return options;
 }
 
-bool PrintManager::printFile(const QString &filePath, const QString &jobName)
+bool PrintManager::printFile(const QString &deviceName, const QString &filePath, const QString &jobName)
 {
     if (!QFile::exists(filePath)) {
-        emit printError("File does not exist: " + filePath);
+        emit printError(deviceName, "File does not exist: " + filePath);
         return false;
     }
     
-    QStringList args = buildPrintOptions();
+    QStringList args = buildPrintOptions(deviceName);
     
     // 添加文件名
     args << filePath;
     
     qDebug() << "Starting print with command: lp" << args;
     
-    m_printProcess->start("lp", args);
+    QProcess *process = getOrCreatePrintProcess(deviceName);
+    process->start("lp", args);
     
-    if (m_printProcess->waitForStarted()) {
+    if (process->waitForStarted()) {
         QString actualJobName = jobName.isEmpty() ? QFileInfo(filePath).fileName() : jobName;
-        emit printStarted(actualJobName);
+        emit printStarted(deviceName, actualJobName);
         return true;
     } else {
-        emit printError("Failed to start print process");
+        emit printError(deviceName, "Failed to start print process");
         return false;
     }
 }
 
-bool PrintManager::printFileWithOptions(const QString &filePath, const QStringList &options)
+bool PrintManager::printFileWithOptions(const QString &deviceName, const QString &filePath, const QStringList &options)
 {
     if (!QFile::exists(filePath)) {
-        emit printError("File does not exist: " + filePath);
+        emit printError(deviceName, "File does not exist: " + filePath);
         return false;
     }
     
-    QStringList args = buildPrintOptions();
+    QStringList args = buildPrintOptions(deviceName);
     args.append(options);
     args << filePath;
     
     qDebug() << "Starting print with custom options: lp" << args;
     
-    m_printProcess->start("lp", args);
+    QProcess *process = getOrCreatePrintProcess(deviceName);
+    process->start("lp", args);
     
-    if (m_printProcess->waitForStarted()) {
-        emit printStarted(QFileInfo(filePath).fileName());
+    if (process->waitForStarted()) {
+        emit printStarted(deviceName, QFileInfo(filePath).fileName());
         return true;
     } else {
-        emit printError("Failed to start print process");
+        emit printError(deviceName, "Failed to start print process");
         return false;
     }
 }
 
-void PrintManager::getPrintJobs()
-{
-    QProcess process;
-    process.start("lpstat", QStringList() << "-o");
-    process.waitForFinished();
-    
-    QString output = process.readAllStandardOutput();
-    QStringList lines = output.split('\n', QString::SkipEmptyParts);
-    
-    QMap<int, QString> jobs;
-    
-    for (const QString &line : lines) {
-        // 解析打印任务，格式通常是 "printer_name-123 username ..."
-        QRegularExpression regex("(.+)-(\\d+)\\s+(.+)\\s+(.+)");
-        QRegularExpressionMatch match = regex.match(line);
-        
-        if (match.hasMatch()) {
-            int jobId = match.captured(2).toInt();
-            QString jobInfo = match.captured(3) + " - " + match.captured(4);
-            jobs[jobId] = jobInfo;
-        }
-    }
-    
-    emit printJobsReceived(jobs);
-}
 
-void PrintManager::cancelPrintJob(int jobId)
-{
-    QProcess process;
-    process.start("cancel", QStringList() << QString::number(jobId));
-    process.waitForFinished();
-    
-    if (process.exitCode() == 0) {
-        qDebug() << "Print job" << jobId << "cancelled successfully";
-    } else {
-        QString error = process.readAllStandardError();
-        qDebug() << "Failed to cancel print job" << jobId << ":" << error;
-    }
-}
-
-void PrintManager::pausePrinter()
-{
-    if (!m_currentPrinter.isEmpty()) {
-        QProcess process;
-        process.start("cupsdisable", QStringList() << m_currentPrinter);
-        process.waitForFinished();
-    }
-}
-
-void PrintManager::resumePrinter()
-{
-    if (!m_currentPrinter.isEmpty()) {
-        QProcess process;
-        process.start("cupsenable", QStringList() << m_currentPrinter);
-        process.waitForFinished();
-    }
-}
 
 void PrintManager::onPrintProcessFinished(int exitCode, QProcess::ExitStatus exitStatus)
 {
+    QProcess *process = qobject_cast<QProcess*>(sender());
+    if (!process) return;
+    
+    // 找到对应的设备名称
+    QString deviceName;
+    for (auto it = m_printProcesses.begin(); it != m_printProcesses.end(); ++it) {
+        if (it.value() == process) {
+            deviceName = it.key();
+            break;
+        }
+    }
+    
     if (exitCode == 0) {
-        QString output = m_printProcess->readAllStandardOutput();
+        QString output = process->readAllStandardOutput();
         int jobId = extractJobId(output);
         
         if (jobId > 0) {
-            emit printCompleted("Print Job", jobId);
+            emit printCompleted(deviceName, "Print Job", jobId);
         } else {
-            emit printCompleted("Print Job", -1);
+            emit printCompleted(deviceName, "Print Job", -1);
         }
     } else {
-        QString error = m_printProcess->readAllStandardError();
-        emit printError("Print failed: " + error);
+        QString error = process->readAllStandardError();
+        emit printError(deviceName, "Print failed: " + error);
     }
 }
 
 void PrintManager::onPrintProcessError(QProcess::ProcessError error)
 {
+    QProcess *process = qobject_cast<QProcess*>(sender());
+    if (!process) return;
+    
+    // 找到对应的设备名称
+    QString deviceName;
+    for (auto it = m_printProcesses.begin(); it != m_printProcesses.end(); ++it) {
+        if (it.value() == process) {
+            deviceName = it.key();
+            break;
+        }
+    }
+    
     QString errorMsg;
     switch (error) {
         case QProcess::FailedToStart:
@@ -255,7 +182,36 @@ void PrintManager::onPrintProcessError(QProcess::ProcessError error)
             break;
     }
     
-    emit printError(errorMsg);
+    emit printError(deviceName, errorMsg);
+}
+
+QProcess* PrintManager::getOrCreatePrintProcess(const QString &deviceName)
+{
+    if (!m_printProcesses.contains(deviceName)) {
+        QProcess *process = new QProcess(this);
+        connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+                this, &PrintManager::onPrintProcessFinished);
+        connect(process, &QProcess::errorOccurred,
+                this, &PrintManager::onPrintProcessError);
+        m_printProcesses[deviceName] = process;
+    }
+    return m_printProcesses[deviceName];
+}
+
+void PrintManager::cleanupProcess(const QString &deviceName)
+{
+    if (m_printProcesses.contains(deviceName)) {
+        QProcess *process = m_printProcesses[deviceName];
+        if (process) {
+            process->terminate();
+            process->waitForFinished(5000);
+            if (process->state() == QProcess::Running) {
+                process->kill();
+            }
+            delete process;
+        }
+        m_printProcesses.remove(deviceName);
+    }
 }
 
 int PrintManager::extractJobId(const QString &output)
@@ -286,12 +242,12 @@ void PrintManager::simulatePrint(const QString &fileName, const QString &printer
     }
     
     qDebug() << "开始模拟打印，文件:" << fileName << "打印机:" << printerName;
-    emit printStarted(fileName);
+    emit printStarted(printerName, fileName);
     
     // 模拟打印进度
-    QTimer::singleShot(2000, [this, fileName]() {
+    QTimer::singleShot(2000, [this, fileName, printerName]() {
         int jobId = QRandomGenerator::global()->bounded(1000, 9999);
-        emit printCompleted(fileName, jobId);
+        emit printCompleted(printerName, fileName, jobId);
         qDebug() << "模拟打印完成，任务ID:" << jobId;
     });
 } 

@@ -15,6 +15,7 @@ MainWindow::MainWindow(QWidget *parent) :
     m_scanManager(new ScanManager(this)),
     m_printManager(new PrintManager(this)),
     m_examManager(new ExamManager(this)),
+    m_deviceManager(new DeviceManager(this)),  // 新增：设备管理器
     m_refreshTimer(new QTimer(this))
 {
     ui->setupUi(this);
@@ -34,6 +35,9 @@ MainWindow::MainWindow(QWidget *parent) :
     m_examManager->refreshExamTypes();
     m_examManager->refreshScanTasks();
     m_examManager->refreshPrintTasks();
+    
+    // 新增：初始化设备管理器
+    initializeDeviceManager();
     
     // 添加示例任务（保持原有UI）
     addSampleTasks();
@@ -88,16 +92,11 @@ void MainWindow::addSampleTasks()
     
     // 测试扫描管理器
     qDebug() << "\n--- 扫描功能测试 ---";
-    QStringList devices = m_scanManager->getAvailableDevices();
-    qDebug() << "可用扫描设备:" << devices;
+    qDebug() << "扫描管理器已初始化";
     
     // 测试打印管理器
     qDebug() << "\n--- 打印功能测试 ---";
-    QStringList printers = m_printManager->getAvailablePrinters();
-    qDebug() << "可用打印机:" << printers;
-    
-    QString defaultPrinter = m_printManager->getDefaultPrinter();
-    qDebug() << "默认打印机:" << defaultPrinter;
+    qDebug() << "打印管理器已初始化";
     
     // 测试网络管理器
     qDebug() << "\n--- 网络功能测试 ---";
@@ -106,12 +105,12 @@ void MainWindow::addSampleTasks()
     
     // 测试扫描设置
     qDebug() << "\n--- 扫描设置测试 ---";
-    m_scanManager->setScanSettings(300, "A4", "Color");
+    m_scanManager->setScanSettings("default-scanner", 300, "jpeg", "Color");
     qDebug() << "扫描设置已更新";
     
     // 测试打印设置
     qDebug() << "\n--- 打印设置测试 ---";
-    m_printManager->setPrintSettings(1, "A4", "Duplex");
+    m_printManager->setPrintSettings("default-printer", 1, "A4", "two-sided-long-edge");
     qDebug() << "打印设置已更新";
     
     // 测试考试管理器
@@ -150,19 +149,63 @@ void MainWindow::setupConnections()
     connect(m_networkManager, &NetworkManager::networkError,
             this, &MainWindow::onNetworkError);
     
-    // 扫描相关
-    connect(m_scanManager, &ScanManager::scanProgress,
-            this, &MainWindow::onScanProgress);
-    connect(m_scanManager, &ScanManager::scanCompleted,
-            this, &MainWindow::onScanCompleted);
-    connect(m_scanManager, &ScanManager::scanError,
-            this, &MainWindow::onScanError);
+    // 设备管理相关
+    connect(m_deviceManager, &DeviceManager::deviceDiscovered,
+            this, &MainWindow::onDeviceDiscovered);
+    connect(m_deviceManager, &DeviceManager::deviceSelected,
+            this, &MainWindow::onDeviceSelected);
+    connect(m_deviceManager, &DeviceManager::deviceStatusChanged,
+            this, &MainWindow::onDeviceStatusChanged);
+    connect(m_deviceManager, &DeviceManager::deviceError,
+            this, &MainWindow::onDeviceError);
     
-    // 打印相关
+    // 扫描相关 - 使用设备名称
+    connect(m_scanManager, &ScanManager::scanStarted,
+            [this](const QString &deviceName) {
+                qDebug() << "扫描开始，设备:" << deviceName;
+            });
+    connect(m_scanManager, &ScanManager::scanProgress,
+            [this](const QString &deviceName, int current, int total) {
+                qDebug() << "扫描进度，设备:" << deviceName << current << "/" << total;
+            });
+    connect(m_scanManager, &ScanManager::scanCompleted,
+            [this](const QString &deviceName, const QString &filePath) {
+                qDebug() << "扫描完成，设备:" << deviceName << "文件:" << filePath;
+                // 自动上传扫描文件
+                m_scanManager->uploadFile(deviceName, filePath, "/exam/");
+            });
+    connect(m_scanManager, &ScanManager::scanError,
+            [this](const QString &deviceName, const QString &error) {
+                qDebug() << "扫描错误，设备:" << deviceName << "错误:" << error;
+            });
+    
+    // 打印相关 - 使用设备名称
+    connect(m_printManager, &PrintManager::printStarted,
+            [this](const QString &deviceName, const QString &jobName) {
+                qDebug() << "打印开始，设备:" << deviceName << "任务:" << jobName;
+            });
     connect(m_printManager, &PrintManager::printCompleted,
-            this, &MainWindow::onPrintCompleted);
+            [this](const QString &deviceName, const QString &jobName, int jobId) {
+                qDebug() << "打印完成，设备:" << deviceName << "任务:" << jobName << "ID:" << jobId;
+            });
     connect(m_printManager, &PrintManager::printError,
-            this, &MainWindow::onPrintError);
+            [this](const QString &deviceName, const QString &error) {
+                qDebug() << "打印错误，设备:" << deviceName << "错误:" << error;
+            });
+    
+    // 上传相关
+    connect(m_scanManager, &ScanManager::uploadStarted,
+            [this](const QString &deviceName, const QString &filePath) {
+                qDebug() << "上传开始，设备:" << deviceName << "文件:" << filePath;
+            });
+    connect(m_scanManager, &ScanManager::uploadCompleted,
+            [this](const QString &deviceName, const QString &fileUrl) {
+                qDebug() << "上传完成，设备:" << deviceName << "URL:" << fileUrl;
+            });
+    connect(m_scanManager, &ScanManager::uploadError,
+            [this](const QString &deviceName, const QString &error) {
+                qDebug() << "上传错误，设备:" << deviceName << "错误:" << error;
+            });
 }
 
 void MainWindow::onScanProgress(int current, int total)
@@ -229,8 +272,23 @@ void MainWindow::onFormScanButtonClicked(const QString &taskId, const QString &c
     qDebug() << "班级:" << className;
     qDebug() << "学科:" << subject;
     
-    // 调用模拟扫描功能
-    m_scanManager->simulateScan(QString("scanner-for-%1").arg(taskId));
+    // 获取当前选择的设备
+    QString currentDevice = m_deviceManager->getCurrentDevice();
+    if (currentDevice.isEmpty()) {
+        // 如果没有选择设备，选择第一个多功能一体机
+        QStringList multifunctionDevices = m_deviceManager->getMultifunctionDevices();
+        if (!multifunctionDevices.isEmpty()) {
+            currentDevice = multifunctionDevices.first();
+            m_deviceManager->selectDevice(currentDevice);
+        }
+    }
+    
+    if (!currentDevice.isEmpty()) {
+        // 调用设备扫描功能
+        onDeviceScanRequested(currentDevice, taskId, className, subject);
+    } else {
+        qDebug() << "✗ 没有可用的扫描设备";
+    }
 }
 
 void MainWindow::onFormPrintButtonClicked(const QString &taskId, const QString &className, const QString &subject)
@@ -240,7 +298,162 @@ void MainWindow::onFormPrintButtonClicked(const QString &taskId, const QString &
     qDebug() << "班级:" << className;
     qDebug() << "学科:" << subject;
     
-    // 调用模拟打印功能
+    // 获取当前选择的设备
+    QString currentDevice = m_deviceManager->getCurrentDevice();
+    if (currentDevice.isEmpty()) {
+        // 如果没有选择设备，选择第一个多功能一体机
+        QStringList multifunctionDevices = m_deviceManager->getMultifunctionDevices();
+        if (!multifunctionDevices.isEmpty()) {
+            currentDevice = multifunctionDevices.first();
+            m_deviceManager->selectDevice(currentDevice);
+        }
+    }
+    
+    if (!currentDevice.isEmpty()) {
+        // 调用设备打印功能
+        onDevicePrintRequested(currentDevice, taskId, className, subject);
+    } else {
+        qDebug() << "✗ 没有可用的打印设备";
+    }
+}
+
+// 新增：设备扫描请求处理
+void MainWindow::onDeviceScanRequested(const QString &deviceName, const QString &taskId, 
+                                      const QString &className, const QString &subject)
+{
+    qDebug() << "=== 设备扫描请求 ===";
+    qDebug() << "设备:" << deviceName;
+    qDebug() << "任务ID:" << taskId;
+    qDebug() << "班级:" << className;
+    qDebug() << "学科:" << subject;
+    
+    // 设置扫描参数
+    m_scanManager->setScanSettings(deviceName, 300, "jpeg", "Color", true); // 双面扫描
+    
+    // 开始批量扫描
+    bool success = m_scanManager->startBatchScan(deviceName, "2025年上第一次月考", className, subject, 6);
+    if (success) {
+        qDebug() << "✓ 批量扫描启动成功";
+    } else {
+        qDebug() << "✗ 批量扫描启动失败";
+    }
+}
+
+// 新增：设备打印请求处理
+void MainWindow::onDevicePrintRequested(const QString &deviceName, const QString &taskId, 
+                                       const QString &className, const QString &subject)
+{
+    qDebug() << "=== 设备打印请求 ===";
+    qDebug() << "设备:" << deviceName;
+    qDebug() << "任务ID:" << taskId;
+    qDebug() << "班级:" << className;
+    qDebug() << "学科:" << subject;
+    
+    // 设置打印参数
+    m_printManager->setPrintSettings(deviceName, 1, "A3", "two-sided-long-edge");
+    
+    // 生成打印文件名
     QString fileName = QString("print_task_%1_%2_%3.pdf").arg(taskId).arg(className).arg(subject);
-    m_printManager->simulatePrint(fileName, QString("printer-for-%1").arg(taskId));
+    
+    // 开始打印
+    bool success = m_printManager->printFile(deviceName, fileName, fileName);
+    if (success) {
+        qDebug() << "✓ 打印任务启动成功";
+    } else {
+        qDebug() << "✗ 打印任务启动失败";
+    }
+}
+
+// 新增：设备管理相关方法实现
+void MainWindow::initializeDeviceManager()
+{
+    qDebug() << "\n=== 初始化设备管理器 ===";
+    
+    // 发现设备
+    QStringList allDevices = m_deviceManager->discoverDevices();
+    qDebug() << "发现设备总数:" << allDevices.size();
+    
+    // 显示设备信息
+    displayDeviceInfo();
+    
+    // 测试多功能一体机
+    testMultifunctionDevice();
+}
+
+void MainWindow::displayDeviceInfo()
+{
+    qDebug() << "\n--- 设备信息显示 ---";
+    
+    QStringList allDevices = m_deviceManager->discoverDevices();
+    for (const QString &device : allDevices) {
+        QString deviceType = m_deviceManager->getDeviceType(device);
+        QString deviceModel = m_deviceManager->getDeviceModel(device);
+        QString capabilities = m_deviceManager->getDeviceCapabilities(device);
+        QString status = m_deviceManager->getDeviceStatus(device);
+        
+        qDebug() << "设备:" << device;
+        qDebug() << "  类型:" << deviceType;
+        qDebug() << "  型号:" << deviceModel;
+        qDebug() << "  功能:" << capabilities;
+        qDebug() << "  状态:" << status;
+        qDebug() << "  是否多功能:" << (m_deviceManager->isMultifunctionDevice(device) ? "是" : "否");
+        qDebug() << "  可扫描:" << (m_deviceManager->canScan(device) ? "是" : "否");
+        qDebug() << "  可打印:" << (m_deviceManager->canPrint(device) ? "是" : "否");
+        qDebug() << "";
+    }
+}
+
+void MainWindow::testMultifunctionDevice()
+{
+    qDebug() << "\n--- 多功能一体机测试 ---";
+    
+    QStringList multifunctionDevices = m_deviceManager->getMultifunctionDevices();
+    qDebug() << "多功能一体机数量:" << multifunctionDevices.size();
+    
+    for (const QString &device : multifunctionDevices) {
+        qDebug() << "测试多功能一体机:" << device;
+        
+        // 选择设备
+        if (m_deviceManager->selectDevice(device)) {
+            qDebug() << "✓ 设备选择成功";
+            
+            // 获取设备配置
+            QMap<QString, QString> config = m_deviceManager->getDeviceConfiguration(device);
+            qDebug() << "设备配置:" << config;
+            
+            // 测试扫描功能
+            if (m_deviceManager->canScan(device)) {
+                qDebug() << "✓ 支持扫描功能";
+                // 这里可以调用扫描管理器
+            }
+            
+            // 测试打印功能
+            if (m_deviceManager->canPrint(device)) {
+                qDebug() << "✓ 支持打印功能";
+                // 这里可以调用打印管理器
+            }
+        } else {
+            qDebug() << "✗ 设备选择失败";
+        }
+    }
+}
+
+void MainWindow::onDeviceDiscovered(const QString &deviceName, const QString &deviceType)
+{
+    qDebug() << "发现新设备:" << deviceName << "类型:" << deviceType;
+}
+
+void MainWindow::onDeviceSelected(const QString &deviceName)
+{
+    qDebug() << "选择设备:" << deviceName;
+}
+
+void MainWindow::onDeviceStatusChanged(const QString &deviceName, const QString &status)
+{
+    qDebug() << "设备状态变化:" << deviceName << "状态:" << status;
+}
+
+void MainWindow::onDeviceError(const QString &deviceName, const QString &error)
+{
+    qDebug() << "设备错误:" << deviceName << "错误:" << error;
 }

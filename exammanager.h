@@ -55,7 +55,7 @@ private slots:
     void onUploadCompleted(const QString &taskId, bool success);
     void onBatchScanCompleted(const QStringList &filePaths);
     void onDownloadCompleted(const QString &taskId, const QString &filePath, bool success);
-    void onPrintCompleted(const QString &jobName, int jobId);
+    void onPrintCompleted(const QString &deviceName, const QString &jobName, int jobId);
     void onNetworkError(const QString &error);
     void onScanError(const QString &error);
     void onPrintError(const QString &error);

@@ -1,0 +1,44 @@
+>>打印机型号：Brother_MFC_J3940DW
+
+
+//CUPS服务（打印指定文件）
+lp -d Brother_MFC_J3940DW /usr/share/cups/data/standard.pdf  // 指定名为Brother_MFC_J3940DW的打印机打印测试文件
+返回：request id is Brother_MFC_J3940DW-** (1 file(s))
+
+
+//SANE服务(批量扫描)
+ scanimage --device-name="airscan:e1:Brother MFC-J3940DW" --mode Color -x  297.11 -y 420 --resolution 300  --format jpeg --source="ADF" --batch=scan%d.jpg --batch-count=3  #单面扫描
+
+scanimage --device-name="airscan:e1:Brother MFC-J3940DW" --mode Color -x  297.11 -y 420 --resolution 300  --format jpeg --source="ADF Duplex" --batch=scan%d.jpg --batch-count=6 #双面扫描
+
+# --source="ADF Duplex"  //双面扫描，生成两个JPEG, --batch-count 参数为纸张的2倍
+# --source="ADF"   //单面扫描
+#一份试卷生成一个独立PDF文件，JPEG格式双面需要转换为一个PDF上传，打印机扫描输出格式：pnm/jpeg/tiff
+
+上传数据---------->>
+Request:
+orangepi@orangepi3b:~$ curl -X POST http://117.72.74.246:18000/system/file/upload -F "parentPath=/exam/" -F "file=@/home/orangepi/scan.jpeg"
+Response:
+{"code":"0","msg":"ok","success":true,"timestamp":1752475289458,"data":{"id":"735144425881075779","url":"http://117.72.74.246:18000/file/exam/6874a699e4b02e1bc445563c.jpeg","thUrl":"http://117.72.74.246:18000/file/exam/6874a699e4b02e1bc445563c.jpeg.min.jpg","metadata":{}}}
+
+Request:
+orangepi@orangepi3b:~$ curl -X POST http://117.72.74.246:18000/system/file/upload -F "parentPath=/exam/" -F "file=@/home/orangepi/24-250714math.pdf"
+Response:
+{"code":"0","msg":"ok","success":true,"timestamp":1752477887586,"data":{"id":"735155323211350120","url":"http://117.72.74.246:18000/file/exam/6874b0bfe4b02e1bc445563e.pdf","thUrl":null,"metadata":{}}}
+
+下载数据----------<<
+(1)orangepi@orangepi3b:~$ curl -O http://117.72.74.246:18000/file/exam/6874a699e4b02e1bc445563c.jpeg
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                                 Dload  Upload   Total   Spent    Left  Speed
+100 72993  100 72993    0     0   783k      0 --:--:-- --:--:-- --:--:--  792k
+
+(2)orangepi@orangepi3b:~$  wget  http://117.72.74.246:18000/file/exam/6874a699e4b02e1bc445563c.jpeg
+--2025-07-14 06:51:17--  http://117.72.74.246:18000/file/exam/6874a699e4b02e1bc445563c.jpeg
+Connecting to 117.72.74.246:18000... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 72993 (71K) [image/jpeg]
+Saving to: ‘6874a699e4b02e1bc445563c.jpeg.1’
+
+6874a699e4b02e1bc445563c.jpeg.1                         100%[=============================================================================================================================>]  71.28K  --.-KB/s    in 0.05s
+
+2025-07-14 06:51:17 (1.45 MB/s) - ‘6874a699e4b02e1bc445563c.jpeg.1’ saved [72993/72993]
