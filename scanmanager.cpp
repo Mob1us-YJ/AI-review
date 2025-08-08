@@ -81,9 +81,9 @@ QString ScanManager::buildScanCommand(const QString &deviceName, const QString &
     
     // 扫描源选择 - 支持ADF和双面扫描
     if (duplex) {
-        args << "--source=ADF Duplex";
+        args << "--source" << "ADF Duplex";
     } else {
-        args << "--source=ADF";
+        args << "--source" << "ADF";
     }
     
     // 输出文件
@@ -212,9 +212,9 @@ bool ScanManager::startScan(const QString &deviceName, const QString &outputPath
     
     // 扫描源选择 - 支持ADF和双面扫描
     if (duplex) {
-        args << "--source=ADF Duplex";
+        args << "--source" << "ADF Duplex";
     } else {
-        args << "--source=ADF";
+        args << "--source" << "ADF";
     }
     
     // 输出文件
