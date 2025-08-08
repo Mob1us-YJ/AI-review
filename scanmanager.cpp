@@ -190,11 +190,35 @@ bool ScanManager::startScan(const QString &deviceName, const QString &outputPath
         return false;
     }
     
-    QString command = buildScanCommand(deviceName, outputPath);
-    QStringList args = command.split(" ", QString::SkipEmptyParts);
+    // 直接构建参数列表，避免字符串分割问题
+    QStringList args;
     
-    // 移除第一个元素（scanimage命令）
-    args.removeFirst();
+    // 设备选择
+    if (!deviceName.isEmpty()) {
+        args << "--device-name=" + deviceName;
+    }
+    
+    // 获取该设备的扫描设置
+    int dpi = m_scanDpi.value(deviceName, 300);
+    QString format = m_scanFormat.value(deviceName, "jpeg");
+    QString mode = m_scanMode.value(deviceName, "Color");
+    bool duplex = m_scanDuplex.value(deviceName, false);
+    
+    // 扫描参数
+    args << "--mode" << mode;
+    args << "-x" << "297.11" << "-y" << "420";  // A4纸张尺寸
+    args << "--resolution" << QString::number(dpi);
+    args << "--format" << format;
+    
+    // 扫描源选择 - 支持ADF和双面扫描
+    if (duplex) {
+        args << "--source=ADF Duplex";
+    } else {
+        args << "--source=ADF";
+    }
+    
+    // 输出文件
+    args << "-o" << outputPath;
     
     qDebug() << "Starting scan with command:" << args;
     
